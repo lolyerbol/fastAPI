@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+google-genai
+Pillow
+python-dotenv
+boto3
+pandas
+pyarrow
+python-multipart
+aiofiles
+boto3
+botocore
+requests
+pydantic
