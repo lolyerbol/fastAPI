@@ -29,6 +29,7 @@ wheels/
 venv/
 ENV/
 env/
+tf_env/
 
 # IDE
 .vscode/

@@ -54,7 +54,11 @@ gemini_analysis_results = Table(
     Column("id", UUID(as_uuid=True), primary_key=True, default=uuid.uuid4),
     Column("screenshot1_filename", String, nullable=False),
     Column("screenshot2_filename", String, nullable=False),
-    Column("analysis_result", Text, nullable=False),
+
+    Column("screenshot1_analysis", Text, nullable=True),
+    Column("screenshot2_analysis", Text, nullable=True),
+    Column("comparison_analysis", Text, nullable=True),
+    Column("future_perspectives", Text, nullable=True),
     Column("created_at", DateTime, server_default=func.now()),
 )
 
