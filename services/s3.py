@@ -1,15 +1,13 @@
 import boto3
-from botocore.exceptions import BotoCoreError, ClientError
-from datetime import datetime
-from fastapi import UploadFile, File
+
 from pathlib import Path
 from io import BytesIO
 from typing import List, Optional
-
+from services.database import aws_bucket_name
 
 def upload_file_to_s3(buffer: BytesIO, file_name: str) -> dict:
     s3_client = boto3.client("s3")
-    bucket_name = "nyct-bucket"
+    bucket_name = aws_bucket_name
     key = f"taxi-data/{file_name}"
     buffer.seek(0)
     response = s3_client.put_object(
