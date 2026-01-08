@@ -146,12 +146,6 @@ async def analyze_screenshots(screenshot1: UploadFile = File(...), screenshot2: 
         raise HTTPException(500, str(e))
 
 
-@app.post("/predict/surcharge", tags=["ML Inference"])
-def predict_surcharge_endpoint(request: SurchargePredictionRequest):
-    ...
-
-
-
 
 @app.get("/s3-files")
 async def get_s3_files():
@@ -210,11 +204,14 @@ def predict_surcharge_endpoint(request: SurchargePredictionRequest):
     - probability_rush_hour: Confidence probability for rush hour
     - feature_values: Extracted features used for prediction
     """
+    print("DEBUG: Received prediction request")
+    logger.info(f"Received prediction request: {request}")
     try:
         result = predict_surcharge(request)
         return {
             "status": "success",
-            "prediction": result
+            "prediction": "It has extra surcharge" if result.get("has_extra_surcharge")==1 else "No extra surcharge",
+            "probability": round(result.get("probability_extra_surcharge"), 4),
         }
     except Exception as e:
         logger.error(f"Prediction error: {e}")

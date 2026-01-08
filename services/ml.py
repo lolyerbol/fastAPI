@@ -45,6 +45,8 @@ class SurchargePredictionRequest(BaseModel):
     trip_distance: float
     trip_duration_minutes: float
     fare_amount: float
+    pickup_location_id: int
+    
 
 
 class RushHourTFModel:
@@ -59,6 +61,7 @@ class RushHourTFModel:
             tpep_pickup_datetime,
             trip_distance,
             trip_duration_minutes,
+            pickup_location_id,
             fare_amount,
             extra
         FROM nyc_taxi_trips
@@ -103,25 +106,34 @@ class RushHourTFModel:
         y = df["has_extra_surcharge"].astype(int)
         return X, y
 
-    def build_model(self) -> tf.keras.Model:
+    def build_model(self, X_train) -> tf.keras.Model:
         # Very small, stable MLP to avoid training instability on small/imbalanced data
         tf.keras.backend.clear_session()
-        model = tf.keras.Sequential(
-            [
-                tf.keras.layers.Input(shape=(self.input_dim,)),
-                tf.keras.layers.Dense(32, activation="relu"),
-                tf.keras.layers.Dense(8, activation="relu"),
-                tf.keras.layers.Dense(1, activation="sigmoid"),
-            ]
-        )
+        #model = tf.keras.Sequential(
+        #        tf.keras.layers.Input(shape=(self.input_dim,)),
+        #    [
+        #        tf.keras.layers.Dense(32, activation="relu"),
+        #        tf.keras.layers.Dense(8, activation="relu"),
+        #        tf.keras.layers.Dense(1, activation="sigmoid"),
+        #    ]
+        #)
+        #model.compile(
+        #    optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
+        #    loss="binary_crossentropy",
+        #    metrics=["accuracy"],
+        #)
+        model = tf.keras.Sequential([
+                    tf.keras.layers.Dense(1, activation="sigmoid", input_shape=(X_train.shape[1],))
+                    ])
+
         model.compile(
-            optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
-            loss="binary_crossentropy",
-            metrics=["accuracy"],
-        )
+                    optimizer=tf.keras.optimizers.Adam(learning_rate=0.01),
+                    loss="binary_crossentropy",
+                    metrics=[tf.keras.metrics.AUC(name="auc")]
+                    )
         return model
 
-    def train(self, epochs: int = 5, batch_size: int = 128) -> None:
+    def train(self, epochs: int = 1) -> None:
         logger.info("Starting TensorFlow model training (simplified)...")
         df = self.load_training_data()
         X, y = self.prepare_xy(df)
@@ -169,7 +181,7 @@ class RushHourTFModel:
             pickle.dump(self.scaler, f)
 
         # Build compact model
-        self.model = self.build_model()
+        self.model = self.build_model(X_train)
 
         # Safeguards for unstable training
         callbacks = [
@@ -185,33 +197,15 @@ class RushHourTFModel:
             class_weight = {0: 1.0, 1: max(1.0, negatives / max(1.0, positives))}
 
         try:
-            self.model.fit(
-                X_train_scaled,
+            self.model.fit(X_train_scaled,
                 y_train,
                 validation_data=(X_val_scaled, y_val),
                 epochs=epochs,
-                batch_size=batch_size,
-                callbacks=callbacks,
                 class_weight=class_weight,
-                verbose=1,
-            )
+                verbose=1,)
 
         except Exception as e:
             logger.exception("Training failed; attempting fallback to very small training run.")
-            # fallback: try 1 epoch with tiny batch to at least produce a saved model
-            try:
-                self.model.fit(
-                    X_train_scaled,
-                    y_train,
-                    validation_data=(X_val_scaled, y_val),
-                    epochs=1,
-                    batch_size=max(16, int(batch_size / 8)),
-                    callbacks=[tf.keras.callbacks.TerminateOnNaN()],
-                    verbose=1,
-                )
-            except Exception:
-                logger.exception("Fallback training also failed; aborting training.")
-                raise
 
         # Save model
         TF_MODEL_DIR.mkdir(parents=True, exist_ok=True)
@@ -253,7 +247,7 @@ class RushHourTFModel:
     def predict_single(self, request: SurchargePredictionRequest) -> Dict[str, Any]:
         if self.model is None or self.scaler is None:
             raise ValueError("Model or scaler not loaded. Call load or train first.")
-
+        logger.info("Preparing features for prediction...")
         df = pd.DataFrame(
             [
                 {
@@ -262,24 +256,33 @@ class RushHourTFModel:
                     "trip_duration_minutes": request.trip_duration_minutes,
                     "fare_amount": request.fare_amount,
                     "extra": 0,
+                    "pickup_location_id": request.pickup_location_id,
                 }
             ]
         )
+        logger.info("Engineering features...")
         df = self.engineer_features(df)
-        X = df[FEATURE_NAMES].astype(float).values
+        X = df[FEATURE_NAMES].copy()
 
-        # Handle NaNs
-        if np.isnan(X).any():
-            X = np.nan_to_num(X, nan=0.0)
-
+        logger.info("Scaling features...")
         X_scaled = self.scaler.transform(X)
-        proba = float(self.model.predict(X_scaled, batch_size=1).reshape(-1)[0])
-        pred = int(proba >= 0.5)
+        logger.info("Running prediction...")
+        X_tensor = tf.convert_to_tensor(X_scaled)
 
+# 2. Call the model directly (The __call__ method)
+# 'training=False' ensures dropout/batch-norm layers are in inference mode
+        predictions = self.model(X_tensor, training=False)
+
+# 3. Extract the single value
+# .numpy() converts the tensor back to a format you can use easily
+        proba = float(predictions.numpy()[0][0])
+        #proba = self.model.predict(X_scaled)
+        pred = int(proba >= 0.5)
+        logger.info(f"Prediction: {pred} with probability {proba:.4f}")
         return {
-            "is_rush_hour": pred,
-            "probability_rush_hour": proba,
-            "probability_not_rush_hour": 1.0 - proba,
+            "has_extra_surcharge": pred,
+            "probability_extra_surcharge": proba,
+            "probability_no_extra_surcharge": 1.0 - proba,
             "hour": int(df["hour"].iloc[0]),
             "day_of_week": int(df["day_of_week"].iloc[0]),
             "is_weekend": int(df["is_weekend"].iloc[0]),
@@ -305,11 +308,13 @@ def load_surcharge_model() -> None:
         _rush_hour_model = RushHourTFModel()
 
     if not _rush_hour_model.load():
-        logger.info("No existing TF model found — starting training.")
-        _rush_hour_model.train()
+        logger.info("No existing TF model found — starting training(?).")
+        #_rush_hour_model.train()
+        pass
 
 
 def predict_surcharge(request: SurchargePredictionRequest) -> Dict[str, Any]:
+    print("DEBUG: In predict_surcharge function")
     if _rush_hour_model is None:
         raise RuntimeError("Model not initialized. Call load_surcharge_model() first.")
     return _rush_hour_model.predict_single(request)
