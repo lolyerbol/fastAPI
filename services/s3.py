@@ -23,7 +23,7 @@ DOWNLOAD_DIR = Path("/tmp/downloads")
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 def download_from_s3(s3_key: str, version_id: str) -> Path:
-    bucket_name = "nyct-bucket"
+    bucket_name = aws_bucket_name
     local_path = DOWNLOAD_DIR / Path(s3_key).name
     s3_client = boto3.client("s3")
     s3_client.download_file(
@@ -38,7 +38,7 @@ def download_from_s3(s3_key: str, version_id: str) -> Path:
 
 def list_files(prefix: str = "taxi-data/") -> List[dict]:
     s3_client = boto3.client("s3")
-    bucket_name = "nyct-bucket"
+    bucket_name = aws_bucket_name
     paginator = s3_client.get_paginator("list_objects_v2")
     page_iterator = paginator.paginate(Bucket=bucket_name, Prefix=prefix)
     results = []
@@ -53,11 +53,12 @@ def list_files(prefix: str = "taxi-data/") -> List[dict]:
 
 def download_to_bytes(s3_key: str, version_id: Optional[str] = None) -> BytesIO:
     s3_client = boto3.client("s3")
-    bucket_name = "nyct-bucket"
+    bucket_name = aws_bucket_name
     params = {"Bucket": bucket_name, "Key": s3_key}
     if version_id:
         params["VersionId"] = version_id
     resp = s3_client.get_object(**params)
     b = BytesIO(resp["Body"].read())
+    version_id = resp.get("VersionId")
     b.seek(0)
-    return b
+    return b,version_id

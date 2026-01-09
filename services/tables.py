@@ -1,3 +1,4 @@
+
 import pandas as pd
 import uuid
 from sqlalchemy import (
@@ -131,3 +132,49 @@ def check_and_upload_dims():
             else:
                 # Requirement: Print specific message if it exists
                 print(f"{table_name} already exists")
+
+def prepare_ingestion_artifacts(file_name, buffer=None, file=None):
+    """
+    Prepares buffer, file_name, checksum, period, file_id for ingestion pipelines.
+    If file is provided (UploadFile), reads buffer from it. If buffer is provided, uses it.
+    Returns: buffer, file_name, checksum, period, file_id
+    """
+    import uuid
+    from io import BytesIO
+    from services.ingestion import extract_period, calculate_checksum_bytesio
+    if file is not None:
+        buffer = BytesIO(file.file.read())
+        file.file.seek(0)
+        file_name = file.filename
+    elif buffer is not None:
+        buffer.seek(0)
+    else:
+        raise ValueError("Either file or buffer must be provided")
+    checksum = calculate_checksum_bytesio(buffer)
+    period = extract_period(file_name)
+    
+    file_id = uuid.uuid4()
+    
+    with engine.begin() as conn:
+        conn.execute(text("""
+CREATE TABLE IF NOT EXISTS file_ingestion_metadata (
+    id uuid primary key,
+    file_name text not null,
+    checksum text not null,
+    period date not null,
+    loaded_at timestamp default now(),
+    s3_key text,
+    s3_version_id text,
+    status text not null default 'success',
+    UNIQUE(file_name, checksum)
+)
+"""))
+        exists = conn.execute(
+            text("""
+SELECT 1 FROM file_ingestion_metadata
+WHERE file_name = :fn AND checksum = :cs
+"""), {"fn": file_name, "cs": checksum}
+        ).fetchone()
+        if exists:
+            raise ValueError(f"File already ingested: {file_name}")
+    return  checksum, period, file_id

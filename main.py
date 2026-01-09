@@ -2,21 +2,17 @@ from fastapi import FastAPI, HTTPException, File, UploadFile
 from pathlib import Path
 from contextlib import asynccontextmanager
 from google import genai
-import uuid
 import json
-
 from PIL import Image
-import io
 from services.database import engine,ai_key
-from services.s3 import download_to_bytes, list_files
+from services.s3 import list_files
 from typing import List
 from services.tables import (
     initialize_tables,
-    gemini_analysis_results,
     check_and_upload_dims
 )
 from services.ai import read_images
-from services.ingestion import ingest_buffer_pipeline, ingest_file_pipeline
+from services.ingestion import ingest_file_pipeline, ingest_multiple_s3_keys
 from services.ml import load_surcharge_model, predict_surcharge, SurchargePredictionRequest
 import logging
 
@@ -120,27 +116,15 @@ def ingest_from_s3(selected_keys: List[str]):
     """
     if not selected_keys:
         raise HTTPException(status_code=400, detail="No files selected")
-
-    results = []
-    for key in selected_keys:
-        try:
-            buffer = download_to_bytes(key)
-            filename = Path(key).name
-            res = ingest_buffer_pipeline(buffer, filename)
-            results.append(res)
-        except ValueError as e:
-            # duplicate or domain validation
-            results.append({"file": key, "status": "skipped", "reason": str(e)})
-        except Exception as e:
-            results.append({"file": key, "status": "error", "reason": str(e)})
-
-    # After ingest(s) run dimension check/upload if needed
     try:
+        results = ingest_multiple_s3_keys(selected_keys)
         check_and_upload_dims()
-    except Exception:
-        pass
-
-    return {"status": "done", "results": results}
+        return {"status": "done", "results": results}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, str(e))
+    
 
 @app.post("/predict/surcharge", tags=["ML Inference"])
 def predict_surcharge_endpoint(request: SurchargePredictionRequest):
