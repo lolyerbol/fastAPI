@@ -314,7 +314,7 @@ def load_surcharge_model() -> None:
 
 
 def predict_surcharge(request: SurchargePredictionRequest) -> Dict[str, Any]:
-    print("DEBUG: In predict_surcharge function")
+ #   print("DEBUG: In predict_surcharge function")
     if _rush_hour_model is None:
         raise RuntimeError("Model not initialized. Call load_surcharge_model() first.")
     return _rush_hour_model.predict_single(request)
