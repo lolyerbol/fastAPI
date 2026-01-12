@@ -150,6 +150,17 @@ Runs synchronous machine learning inference for a single data entry.
 1. Request payload is received
 2. Preloaded ML model performs prediction
 3. Prediction and probability are returned immediately
+### Input
+```python
+{
+  tpep_pickup_datetime: datetime,
+  trip_distance: float,
+  trip_duration_minutes: float,
+  fare_amount: float,
+  pickup_location_id: int
+
+}
+```
 
 ### Response
 
@@ -175,7 +186,18 @@ Runs synchronous machine learning inference for a single data entry.
 * Execute ETL pipeline
 * Validate and upload dimension tables
 * Safely insert data into PostgreSQL
+### Response
+```json
+{
+  "status": "success",
+  "file": file_name,
+  "period": str(period),
+  "file_id": str(file_id),
+  "s3_key": file_name,
+  "version_id": versionID
+}
 
+```
 ---
 
 ### Screenshot Analysis Task
@@ -201,6 +223,14 @@ Runs synchronous machine learning inference for a single data entry.
 * API remains responsive under heavy load
 
 ---
+### Response
+```json
+{
+  "status": "success", 
+  "analysis": analysis_data,
+  "message": "Structured analysis completed and stored in database"
+}
+```
 
 ## Technology Stack
 

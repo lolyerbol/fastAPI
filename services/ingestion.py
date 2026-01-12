@@ -181,8 +181,8 @@ def ingest_buffer_pipeline(buffer: BytesIO, file_name: str,versionID: str = None
         "file": file_name,
         "period": str(period),
         "file_id": str(file_id),
-        "s3_key": None,
-        "version_id": None
+        "s3_key": file_name,
+        "version_id": versionID
     }
 def ingest_multiple_s3_keys(s3_keys: List[str]):
     """

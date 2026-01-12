@@ -23,12 +23,7 @@ def upload_file(s3_key: str, version_id: str = None) -> dict:
         result = ingest_buffer_pipeline(file_buffer, s3_key, version_id)
         check_and_upload_dims()
 
-        return {
-            "status": "success",
-            "s3_key": s3_key,
-            "version_id": version_id,
-            "result": result
-        }
+        return result
     except ClientError as e:
         return {
             "status": "error",
@@ -53,6 +48,6 @@ def analyze_screenshots_task(self, s3_key1: str, s3_key2: str, filename1: str, f
 
         res = read_images(image1_bytes,filename1, image2_bytes, filename2)
         
-        return {"status": "success", "analysis": res}
+        return res
     except Exception as exc:
         raise self.retry(exc=exc, countdown=300)    
