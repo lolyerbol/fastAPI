@@ -4,19 +4,19 @@ def remove_outliers(new_frame):
     new_frame['trip_duration_minutes'] = round((new_frame['tpep_dropoff_datetime'] - new_frame['tpep_pickup_datetime']).dt.total_seconds()/60,2)
 
     a = new_frame.shape[0]
-    print("Number of pickup records:", a)
+#    print("Number of pickup records:", a)
 
     temp_frame = new_frame[(new_frame.trip_duration_minutes > 0)&(new_frame.trip_duration_minutes <720)]
     c = temp_frame.shape[0]
-    print("Number of outliers from trip times analysis:", (a-c))
+#    print("Number of outliers from trip times analysis:", (a-c))
     
     temp_frame = new_frame[(new_frame.trip_distance > 0) & (new_frame.trip_distance < 40)]
     d = temp_frame.shape[0]
-    print ("Number of outliers from trip distance analysis:", (a-d))
+#    print ("Number of outliers from trip distance analysis:", (a-d))
     
     temp_frame = new_frame[(new_frame.total_amount < 500) & (new_frame.total_amount > 0)]
     e = temp_frame.shape[0]
-    print ("Number of outliers from fare analysis:", (a-e))
+#    print ("Number of outliers from fare analysis:", (a-e))
 
     new_frame = new_frame[(new_frame.trip_duration_minutes > 0)&(new_frame.trip_duration_minutes <720)]
     new_frame = new_frame[(new_frame.trip_distance > 0) & (new_frame.trip_distance < 40)]

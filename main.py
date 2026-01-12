@@ -1,20 +1,15 @@
 from fastapi import FastAPI, HTTPException, File, UploadFile
 from pathlib import Path
 from contextlib import asynccontextmanager
-from google import genai
-import json
-from PIL import Image
-from services.database import engine,ai_key
-from services.s3 import list_files
-from typing import List
-from services.tables import (
-    initialize_tables,
-    check_and_upload_dims
-)
-from services.ai import read_images
-from services.ingestion import ingest_file_pipeline, ingest_multiple_s3_keys
+from worker import analyze_screenshots_task, upload_file
+from services.s3 import upload_file_to_s3, aws_bucket_name
 from services.ml import load_surcharge_model, predict_surcharge, SurchargePredictionRequest
 import logging
+from celery.result import AsyncResult
+from io import BytesIO
+import uuid
+import boto3
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,29 +21,13 @@ DATA_DIR = Path(__file__).parent / "data"
 async def lifespan(app: FastAPI):
     # This runs when the server starts
     logger.info("System Startup: Checking Dimension Tables...")
-    initialize_tables()
-    check_and_upload_dims()
+#    initialize_tables()
+#    check_and_upload_dims()
     
     # Load ML models
-    logger.info("Loading surcharge prediction model...")
+#    logger.info("Loading surcharge prediction model...")
     load_surcharge_model()
     
-    # Configure Gemini API (support old and new google-genai interfaces)
-    try:
-        # older interface used configure()
-        genai.configure(api_key=ai_key)
-    except AttributeError:
-        # new google-genai may expose a Client class or rely on env var
-        try:
-            Client = getattr(genai, "Client", None)
-            if Client:
-                genai.client = Client(api_key=ai_key)
-            else:
-                import os
-                os.environ.setdefault("GENAI_API_KEY", ai_key)
-        except Exception:
-            import os
-            os.environ.setdefault("GENAI_API_KEY", ai_key)
     yield
     # This runs when the server stops
     logger.info("System Shutdown")
@@ -57,76 +36,65 @@ async def lifespan(app: FastAPI):
 # Initialize FastAPI with lifespan
 app = FastAPI(lifespan=lifespan)
 
+@app.get("/task-status/{task_id}")
+async def get_task_status(task_id: str):
+    task_result = AsyncResult(task_id)
+    if task_result.state == "PENDING":
+        return {"task_id": task_id, "status": "pending"}
+    elif task_result.state == "SUCCESS":
+        return {"task_id": task_id, "status": "success", "result": task_result.result}
+    elif task_result.state == "FAILURE":
+        return {"task_id": task_id, "status": "failure", "error": str(task_result.result)}
+    else:
+        return {"task_id": task_id, "status": task_result.state}
 
 @app.get("/")
 async def root():
     return {"status": "API is active"}
 
 @app.post("/ingest")
-def ingest(file: UploadFile = File(...)):
+async def ingest(file: UploadFile = File(...)):
     ### to ingest a file and check/upload dimension tables
     try:
-        res = ingest_file_pipeline(file) 
-        check_and_upload_dims()
-        return {"status": "success", "details": res}
+        buffer = BytesIO(file.file.read())
+        upload_file_to_s3(buffer,file.filename)
+        res = upload_file.delay(f"taxi-data/{file.filename}")
+        return {
+            "status": "task_dispatched",
+            "task_id": res.id
+        }
     
-    except ValueError as e:
-        raise HTTPException(400, str(e))
     except Exception as e:
+        logger.error(f"Ingest error: {e}")
         raise HTTPException(500, str(e))
 
 
 @app.post("/analyze-screenshots", tags=["Analysis"])
 async def analyze_screenshots(screenshot1: UploadFile = File(...), screenshot2: UploadFile = File(...)):
-    """Endpoint to upload 2 screenshots, analyze them with Gemini, and store structured results in PostgreSQL"""
-    try:
-        image1_bytes = await screenshot1.read()
-        image2_bytes = await screenshot2.read()
-        res = await read_images(image1_bytes,screenshot1.filename, image2_bytes,screenshot2.filename)
-        return {"status": "success", "analysis": res}
-    except json.JSONDecodeError as e:
-        raise HTTPException(500, f"Failed to parse Gemini response as JSON: {str(e)}")
-    except Exception as e:
-        raise HTTPException(500, str(e))
+# 1. Генерируем уникальные ключи для S3
+    task_id = str(uuid.uuid4())
+    s3_key1 = f"temp/{task_id}/{screenshot1.filename}"
+    s3_key2 = f"temp/{task_id}/{screenshot2.filename}"
+    s3_client = boto3.client("s3")
+    # 2. Быстрая загрузка в S3 (не блокируем API надолго)
+    s3_client.upload_fileobj(screenshot1.file, aws_bucket_name, s3_key1)
+    s3_client.upload_fileobj(screenshot2.file, aws_bucket_name, s3_key2)
+
+    # 3. Отправляем задачу в RabbitMQ
+    task = analyze_screenshots_task.delay(s3_key1, s3_key2,screenshot1.filename,screenshot2.filename)
+
+    return {
+        "message": "Analysis started",
+        "task_id": task.id,
+        "check_status_url": f"/status/{task.id}"
+    }
 
 
 
-@app.get("/s3-files")
-async def get_s3_files():
-    """
-    Return list of files available in S3 under the expected prefix.
-    If no files found, returns a message suitable for the UI: 'sorry, nothing to upload'.
-    """
-    try:
-        files = list_files()
-        if not files:
-            return {"status": "empty", "message": "sorry, nothing to upload", "files": []}
-        return {"status": "ok", "files": files}
-    except Exception as e:
-        raise HTTPException(500, str(e))
 
-
-@app.post("/s3-files/ingest-from-s3")
-def ingest_from_s3(selected_keys: List[str]):
-    """
-    Accepts a JSON array of S3 keys (strings). Downloads each selected file from S3
-    into memory and runs the ingestion pipeline.
-    Example body:
-    ["taxi-data/2023-01-file.csv", "taxi-data/2023-02-file.parquet"]
-    """
-    if not selected_keys:
-        raise HTTPException(status_code=400, detail="No files selected")
-    try:
-        results = ingest_multiple_s3_keys(selected_keys)
-        check_and_upload_dims()
-        return {"status": "done", "results": results}
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    except Exception as e:
-        raise HTTPException(500, str(e))
     
 
-@app.post("/predict/surcharge", tags=["ML Inference"])
+@app.post("/predict/extra", tags=["ML Inference"])
 def predict_surcharge_endpoint(request: SurchargePredictionRequest):
     """
     Predict if a trip occurred during rush hour based on features.
@@ -139,6 +107,7 @@ def predict_surcharge_endpoint(request: SurchargePredictionRequest):
     print("DEBUG: Received prediction request")
     logger.info(f"Received prediction request: {request}")
     try:
+#        load_surcharge_model()
         result = predict_surcharge(request)
         return {
             "status": "success",

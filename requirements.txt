@@ -15,3 +15,7 @@ botocore
 requests
 pydantic
 tensorflow
+celery
+scikit-learn
+tensorflow
+numpy

@@ -65,11 +65,11 @@ def ingest_file_pipeline(file: UploadFile):
 
         # --- S3 upload ---
     s3_result = upload_file_to_s3(buffer, file_name)  # возвращает s3_key + version_id
-    print(f"Uploaded to S3: {s3_result}")
+#    print(f"Uploaded to S3: {s3_result}")
         # --- чистка и подготовка DF ---
     df = pd.read_parquet(buffer) if file_name.endswith(".parquet") else pd.read_csv(buffer)
     df = clean_df(df)
-    print(f"DataFrame cleaned, {len(df)} rows ready for ingestion")
+#    print(f"DataFrame cleaned, {len(df)} rows ready for ingestion")
         
     df["source_file_id"] = file_id
 
@@ -170,7 +170,7 @@ def ingest_buffer_pipeline(buffer: BytesIO, file_name: str,versionID: str = None
                 "fn": file_name,
                 "cs": checksum,
                 "period": period,
-                "s3_key": f"taxi-data/{file_name}",
+                "s3_key": file_name,
                 "vid": versionID,
                 "status": "success",
             }

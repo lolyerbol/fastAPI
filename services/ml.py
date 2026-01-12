@@ -134,7 +134,7 @@ class RushHourTFModel:
         return model
 
     def train(self, epochs: int = 1) -> None:
-        logger.info("Starting TensorFlow model training (simplified)...")
+#        logger.info("Starting TensorFlow model training (simplified)...")
         df = self.load_training_data()
         X, y = self.prepare_xy(df)
 #        logger.info(f"Training data shape: X={X.shape}, y={y.shape}")
@@ -247,7 +247,7 @@ class RushHourTFModel:
     def predict_single(self, request: SurchargePredictionRequest) -> Dict[str, Any]:
         if self.model is None or self.scaler is None:
             raise ValueError("Model or scaler not loaded. Call load or train first.")
-        logger.info("Preparing features for prediction...")
+ #       logger.info("Preparing features for prediction...")
         df = pd.DataFrame(
             [
                 {
@@ -260,11 +260,11 @@ class RushHourTFModel:
                 }
             ]
         )
-        logger.info("Engineering features...")
+#        logger.info("Engineering features...")
         df = self.engineer_features(df)
         X = df[FEATURE_NAMES].copy()
 
-        logger.info("Scaling features...")
+#        logger.info("Scaling features...")
         X_scaled = self.scaler.transform(X)
         logger.info("Running prediction...")
         X_tensor = tf.convert_to_tensor(X_scaled)
