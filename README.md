@@ -19,6 +19,9 @@ This project is a machine learning-powered web service for taxi demand predictio
 - **Cloud/Infra:** Docker, AWS S3, Celery, RabbitMQ
 - **Other:** PyArrow, Pydantic, python-dotenv
 
+## Architecture
+
+![Architecture of the Web Service](./arch.png)
 
 ## Installation
 

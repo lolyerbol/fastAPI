@@ -60,7 +60,8 @@ downloads/
 temp/
 model.ipynb
 readme_2.md
-
+architecture_diagram.png
+architecture.puml
 # Data files - ignore all except taxi_zone_lookup.csv
 data/*
 !data/taxi_zone_lookup.csv
