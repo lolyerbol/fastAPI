@@ -59,6 +59,7 @@ uploaded_files/
 downloads/
 temp/
 model.ipynb
+readme_2.md
 
 # Data files - ignore all except taxi_zone_lookup.csv
 data/*

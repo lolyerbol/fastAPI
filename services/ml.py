@@ -8,7 +8,7 @@ from typing import Optional, Dict, Any
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 
@@ -41,11 +41,34 @@ FEATURE_NAMES = [
 
 
 class SurchargePredictionRequest(BaseModel):
-    tpep_pickup_datetime: datetime
-    trip_distance: float
-    trip_duration_minutes: float
-    fare_amount: float
-    pickup_location_id: int
+    tpep_pickup_datetime: datetime = Field(
+        ..., 
+        description="The date and time when the meter was engaged.",
+        json_schema_extra={"example": "2023-10-27T17:30:00"}
+    )
+    trip_distance: float = Field(
+        ..., 
+        gt=0, 
+        description="The elapsed trip distance in miles reported by the taximeter.",
+        json_schema_extra={"example": 2.5}
+    )
+    trip_duration_minutes: float = Field(
+        ..., 
+        gt=0, 
+        description="Total duration of the trip in minutes.",
+        json_schema_extra={"example": 15.5}
+    )
+    fare_amount: float = Field(
+        ..., 
+        ge=0, 
+        description="The time-and-distance fare calculated by the meter.",
+        json_schema_extra={"example": 12.50}
+    )
+    pickup_location_id: int = Field(
+        ..., 
+        description="TLC Taxi Zone ID in which the taximeter was engaged.",
+        json_schema_extra={"example": 161}
+    )
     
 
 

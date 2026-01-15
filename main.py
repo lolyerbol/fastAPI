@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, File, UploadFile
+from fastapi import FastAPI, HTTPException, File, UploadFile, APIRouter, Depends
 from pathlib import Path
 from contextlib import asynccontextmanager
 from worker import analyze_screenshots_task, upload_file
@@ -9,6 +9,10 @@ from celery.result import AsyncResult
 from io import BytesIO
 import uuid
 import boto3
+from services.health import router as health_router
+
+router = APIRouter()
+
 
 
 logging.basicConfig(level=logging.INFO)
@@ -35,6 +39,9 @@ async def lifespan(app: FastAPI):
 
 # Initialize FastAPI with lifespan
 app = FastAPI(lifespan=lifespan)
+
+app.include_router(health_router)
+
 
 @app.get("/task-status/{task_id}")
 async def get_task_status(task_id: str):
@@ -73,6 +80,7 @@ async def ingest(file: UploadFile = File(...)):
 async def analyze_screenshots(screenshot1: UploadFile = File(...), screenshot2: UploadFile = File(...)):
 # 1. Генерируем уникальные ключи для S3
     task_id = str(uuid.uuid4())
+    
     s3_key1 = f"temp/{task_id}/{screenshot1.filename}"
     s3_key2 = f"temp/{task_id}/{screenshot2.filename}"
     s3_client = boto3.client("s3")
@@ -95,16 +103,16 @@ async def analyze_screenshots(screenshot1: UploadFile = File(...), screenshot2: 
     
 
 @app.post("/predict/extra", tags=["ML Inference"])
-def predict_surcharge_endpoint(request: SurchargePredictionRequest):
+def predict_surcharge_endpoint(request: SurchargePredictionRequest = Depends()):
     """
     Predict if a trip occurred during rush hour based on features.
-    
+         
     Returns:
     - is_rush_hour: 1 if predicted to be rush hour, 0 otherwise
     - probability_rush_hour: Confidence probability for rush hour
     - feature_values: Extracted features used for prediction
     """
-    print("DEBUG: Received prediction request")
+    
     logger.info(f"Received prediction request: {request}")
     try:
 #        load_surcharge_model()
@@ -115,5 +123,4 @@ def predict_surcharge_endpoint(request: SurchargePredictionRequest):
             "probability": round(result.get("probability_extra_surcharge"), 4),
         }
     except Exception as e:
-        logger.error(f"Prediction error: {e}")
         raise HTTPException(500, f"Prediction failed: {str(e)}")

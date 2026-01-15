@@ -10,6 +10,7 @@ pandas
 pyarrow
 python-multipart
 aiofiles
+pika
 boto3
 botocore
 requests
